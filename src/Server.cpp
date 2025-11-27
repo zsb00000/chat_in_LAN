@@ -1,321 +1,402 @@
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <algorithm>
+#include <atomic>
 #include <iostream>
-#include <vector>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <mutex>
-#include <atomic>
-#include <algorithm>
+#include <vector>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 #pragma comment(lib, "ws2_32.lib")
 
 class ChatServer
 {
-	private:
-		SOCKET server_socket;
-		std::atomic<bool> running;
+  private:
+    SOCKET server_socket;
+    std::atomic<bool> running;
 
-		struct ClientInfo
-		{
-			SOCKET socket;
-			std::string username;
-			std::thread thread;
-		};
+    struct ClientInfo
+    {
+        SOCKET socket;
+        std::string username;
+        std::thread thread;
+    };
 
-		std::vector<ClientInfo> clients;
-		std::mutex clients_mutex;
+    std::vector<ClientInfo> clients;
+    std::mutex clients_mutex;
 
-	public:
-		ChatServer() : server_socket(INVALID_SOCKET), running(false) {}
+  public:
+    ChatServer() : server_socket(INVALID_SOCKET), running(false) {}
 
-		~ChatServer()
-		{
-			stop();
-		}
+    ~ChatServer() { stop(); }
 
-		bool start(int port)
-		{
-			// 初始化Winsock
-			WSADATA wsa_data;
-			if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0)
-			{
-				std::cerr << "WSAStartup failed: " << WSAGetLastError() << std::endl;
-				return false;
-			}
+    // bool start(int port)
+    // {
+    // 	// 初始化Winsock
+    // 	WSADATA wsa_data;
+    // 	if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0)
+    // 	{
+    // 		std::cerr << "WSAStartup failed: " << WSAGetLastError() <<
+    // std::endl; 		return false;
+    // 	}
 
-			// 创建服务器socket
-			server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-			if (server_socket == INVALID_SOCKET)
-			{
-				std::cerr << "Socket creation failed: " << WSAGetLastError() << std::endl;
-				WSACleanup();
-				return false;
-			}
+    // 	// 创建服务器socket
+    // 	server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    // 	if (server_socket == INVALID_SOCKET)
+    // 	{
+    // 		std::cerr << "Socket creation failed: " << WSAGetLastError() <<
+    // std::endl; 		WSACleanup(); 		return false;
+    // 	}
 
-			// 设置SO_REUSEADDR
-			int opt = 1;
-			if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR,
-			               (char *)&opt, sizeof(opt)) == SOCKET_ERROR)
-			{
-				std::cerr << "Setsockopt failed: " << WSAGetLastError() << std::endl;
-			}
+    // 	// 设置SO_REUSEADDR
+    // 	int opt = 1;
+    // 	if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR,
+    // 	               (char *)&opt, sizeof(opt)) == SOCKET_ERROR)
+    // 	{
+    // 		std::cerr << "Setsockopt failed: " << WSAGetLastError() <<
+    // std::endl;
+    // 	}
 
-			// 绑定地址
-			sockaddr_in server_addr{};
-			server_addr.sin_family = AF_INET;
-			server_addr.sin_addr.s_addr = INADDR_ANY;
-			server_addr.sin_port = htons(port);
+    // 	// 绑定地址
+    // 	sockaddr_in server_addr{};
+    // 	server_addr.sin_family = AF_INET;
+    // 	server_addr.sin_addr.s_addr = INADDR_ANY;
+    // 	server_addr.sin_port = htons(port);
 
-			if (bind(server_socket, (sockaddr *)&server_addr, sizeof(server_addr)) == SOCKET_ERROR)
-			{
-				std::cerr << "Bind failed: " << WSAGetLastError() << std::endl;
-				closesocket(server_socket);
-				WSACleanup();
-				return false;
-			}
+    // 	if (bind(server_socket, (sockaddr *)&server_addr, sizeof(server_addr))
+    // == SOCKET_ERROR)
+    // 	{
+    // 		std::cerr << "Bind failed: " << WSAGetLastError() << std::endl;
+    // 		closesocket(server_socket);
+    // 		WSACleanup();
+    // 		return false;
+    // 	}
 
-			// 开始监听
-			if (listen(server_socket, SOMAXCONN) == SOCKET_ERROR)
-			{
-				std::cerr << "Listen failed: " << WSAGetLastError() << std::endl;
-				closesocket(server_socket);
-				WSACleanup();
-				return false;
-			}
+    // 	// 开始监听
+    // 	if (listen(server_socket, SOMAXCONN) == SOCKET_ERROR)
+    // 	{
+    // 		std::cerr << "Listen failed: " << WSAGetLastError() << std::endl;
+    // 		closesocket(server_socket);
+    // 		WSACleanup();
+    // 		return false;
+    // 	}
 
-			std::cout << "服务器启动成功，监听端口: " << port << std::endl;
-			running = true;
+    // 	std::cout << "服务器启动成功，监听端口: " << port << std::endl;
+    // 	running = true;
 
-			// 启动接受连接线程
-			std::thread accept_thread(&ChatServer::acceptConnections, this);
-			accept_thread.detach();
+    // 	// 启动接受连接线程
+    // 	std::thread accept_thread(&ChatServer::acceptConnections, this);
+    // 	accept_thread.detach();
 
-			return true;
-		}
+    // 	return true;
+    // }
+    bool start(int port)
+    {
+        // 初始化Winsock
+        WSADATA wsa_data;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0)
+        {
+            std::cerr << "WSAStartup failed: " << WSAGetLastError()
+                      << std::endl;
+            return false;
+        }
 
-		void stop()
-		{
-			if (!running) return;
+        // 创建服务器socket - 修改为支持IPv6
+        server_socket =
+            socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP); // AF_INET6 代替 AF_INET
+        if (server_socket == INVALID_SOCKET)
+        {
+            std::cerr << "Socket creation failed: " << WSAGetLastError()
+                      << std::endl;
+            WSACleanup();
+            return false;
+        }
 
-			running = false;
+        // 设置SO_REUSEADDR和IPV6_V6ONLY（允许同时支持IPv4和IPv6）
+        int opt = 1;
+        if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
+                       sizeof(opt)) == SOCKET_ERROR)
+        {
+            std::cerr << "Setsockopt SO_REUSEADDR failed: " << WSAGetLastError()
+                      << std::endl;
+        }
 
-			// 关闭服务器socket
-			if (server_socket != INVALID_SOCKET)
-			{
-				closesocket(server_socket);
-				server_socket = INVALID_SOCKET;
-			}
+        // 设置IPV6_V6ONLY为0以同时支持IPv4和IPv6
+        int ipv6only = 0;
+        if (setsockopt(server_socket, IPPROTO_IPV6, IPV6_V6ONLY,
+                       (char *)&ipv6only, sizeof(ipv6only)) == SOCKET_ERROR)
+        {
+            std::cerr << "Setsockopt IPV6_V6ONLY failed: " << WSAGetLastError()
+                      << std::endl;
+        }
 
-			// 关闭所有客户端连接
-			{
-				std::lock_guard<std::mutex> lock(clients_mutex);
-				for (auto &client : clients)
-				{
-					if (client.socket != INVALID_SOCKET)
-					{
-						shutdown(client.socket, SD_BOTH);
-						closesocket(client.socket);
-					}
-					if (client.thread.joinable())
-					{
-						client.thread.join();
-					}
-				}
-				clients.clear();
-			}
+        // 绑定地址 - 修改为IPv6地址结构
+        sockaddr_in6 server_addr{}; // sockaddr_in6 代替 sockaddr_in
+        server_addr.sin6_family = AF_INET6;
+        server_addr.sin6_addr = in6addr_any; // IPv6的任意地址
+        server_addr.sin6_port = htons(port);
 
-			WSACleanup();
-			std::cout << "服务器已关闭" << std::endl;
-		}
+        if (bind(server_socket, (sockaddr *)&server_addr,
+                 sizeof(server_addr)) == SOCKET_ERROR)
+        {
+            std::cerr << "Bind failed: " << WSAGetLastError() << std::endl;
+            closesocket(server_socket);
+            WSACleanup();
+            return false;
+        }
 
-	private:
-		void acceptConnections()
-		{
-			std::cout << "开始接受客户端连接..." << std::endl;
+        // 开始监听（其余代码不变）
+        if (listen(server_socket, SOMAXCONN) == SOCKET_ERROR)
+        {
+            std::cerr << "Listen failed: " << WSAGetLastError() << std::endl;
+            closesocket(server_socket);
+            WSACleanup();
+            return false;
+        }
 
-			while (running)
-			{
-				sockaddr_in client_addr{};
-				int client_addr_len = sizeof(client_addr);
+        std::cout << "服务器启动成功，监听端口: " << port << " (支持IPv6)"
+                  << std::endl;
+        running = true;
 
-				SOCKET client_socket = accept(server_socket,
-				                              (sockaddr *)&client_addr,
-				                              &client_addr_len);
+        // 启动接受连接线程
+        std::thread accept_thread(&ChatServer::acceptConnections, this);
+        accept_thread.detach();
 
-				if (client_socket == INVALID_SOCKET)
-				{
-					if (running)
-					{
-						std::cerr << "Accept failed: " << WSAGetLastError() << std::endl;
-					}
-					continue;
-				}
+        return true;
+    }
 
-				// 获取客户端IP地址
-				char client_ip[INET_ADDRSTRLEN];
-				inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
-				std::cout << "新的客户端连接: " << client_ip << ":" << ntohs(client_addr.sin_port) << std::endl;
+    void stop()
+    {
+        if (!running)
+            return;
 
-				// 创建客户端处理线程
-				std::thread client_thread(&ChatServer::handleClient, this, client_socket);
+        running = false;
 
-				{
-					std::lock_guard<std::mutex> lock(clients_mutex);
-					clients.push_back({client_socket, "", std::move(client_thread)});
-				}
-			}
-		}
+        // 关闭服务器socket
+        if (server_socket != INVALID_SOCKET)
+        {
+            closesocket(server_socket);
+            server_socket = INVALID_SOCKET;
+        }
 
-		void handleClient(SOCKET client_socket)
-		{
-			char buffer[1024];
-			std::string username;
+        // 关闭所有客户端连接
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex);
+            for (auto &client : clients)
+            {
+                if (client.socket != INVALID_SOCKET)
+                {
+                    shutdown(client.socket, SD_BOTH);
+                    closesocket(client.socket);
+                }
+                if (client.thread.joinable())
+                {
+                    client.thread.join();
+                }
+            }
+            clients.clear();
+        }
 
-			try
-			{
-				// 接收用户名
-				int bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
-				if (bytes_received <= 0)
-				{
-					throw std::runtime_error("接收用户名失败");
-				}
+        WSACleanup();
+        std::cout << "服务器已关闭" << std::endl;
+    }
 
-				buffer[bytes_received] = '\0';
-				username = std::string(buffer);
+  private:
+    void acceptConnections()
+    {
+        std::cout << "开始接受客户端连接..." << std::endl;
 
-				// 更新客户端信息中的用户名
-				{
-					std::lock_guard<std::mutex> lock(clients_mutex);
-					for (auto &client : clients)
-					{
-						if (client.socket == client_socket)
-						{
-							client.username = username;
-							break;
-						}
-					}
-				}
+        while (running)
+        {
+            sockaddr_in client_addr{};
+            int client_addr_len = sizeof(client_addr);
 
-				std::string welcome_msg = "用户 " + username + " 加入了聊天室";
-				std::cout << welcome_msg << std::endl;
-				broadcastMessage(welcome_msg, client_socket);
+            SOCKET client_socket = accept(
+                server_socket, (sockaddr *)&client_addr, &client_addr_len);
 
-				// 主消息循环
-				while (running)
-				{
-					bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+            if (client_socket == INVALID_SOCKET)
+            {
+                if (running)
+                {
+                    std::cerr << "Accept failed: " << WSAGetLastError()
+                              << std::endl;
+                }
+                continue;
+            }
 
-					if (bytes_received == 0)
-					{
-						std::cout << "客户端 " << username << " 断开连接" << std::endl;
-						break;
-					}
-					else if (bytes_received == SOCKET_ERROR)
-					{
-						int error = WSAGetLastError();
-						if (error != WSAEWOULDBLOCK)
-						{
-							std::cerr << "接收数据错误: " << error << std::endl;
-							break;
-						}
-						continue;
-					}
+            // 获取客户端IP地址
+            char client_ip[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &client_addr.sin_addr, client_ip,
+                      INET_ADDRSTRLEN);
+            std::cout << "新的客户端连接: " << client_ip << ":"
+                      << ntohs(client_addr.sin_port) << std::endl;
 
-					buffer[bytes_received] = '\0';
-					std::string message(buffer);
+            // 创建客户端处理线程
+            std::thread client_thread(&ChatServer::handleClient, this,
+                                      client_socket);
 
-					// 处理退出命令
-					if (message == "/quit" || message == "/exit")
-					{
-						std::cout << "用户 " << username << " 请求退出" << std::endl;
-						break;
-					}
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                clients.push_back(
+                    {client_socket, "", std::move(client_thread)});
+            }
+        }
+    }
 
-					std::string full_message = username + ": " + message;
-					std::cout << full_message << std::endl;
-					broadcastMessage(full_message, client_socket);
-				}
-			}
-			catch (const std::exception &e)
-			{
-				std::cerr << "处理客户端错误: " << e.what() << std::endl;
-			}
+    void handleClient(SOCKET client_socket)
+    {
+        char buffer[1024];
+        std::string username;
 
-			// 清理客户端
-			removeClient(client_socket);
-			if (!username.empty())
-			{
-				std::string leave_msg = "用户 " + username + " 离开了聊天室";
-				std::cout << leave_msg << std::endl;
-				broadcastMessage(leave_msg);
-			}
-		}
+        try
+        {
+            // 接收用户名
+            int bytes_received =
+                recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+            if (bytes_received <= 0)
+            {
+                throw std::runtime_error("接收用户名失败");
+            }
 
-		void broadcastMessage(const std::string &message, SOCKET exclude_socket = INVALID_SOCKET)
-		{
-			std::lock_guard<std::mutex> lock(clients_mutex);
+            buffer[bytes_received] = '\0';
+            username = std::string(buffer);
 
-			for (const auto &client : clients)
-			{
-				if (client.socket != exclude_socket && client.socket != INVALID_SOCKET)
-				{
-					send(client.socket, message.c_str(), message.length(), 0);
-				}
-			}
-		}
+            // 更新客户端信息中的用户名
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                for (auto &client : clients)
+                {
+                    if (client.socket == client_socket)
+                    {
+                        client.username = username;
+                        break;
+                    }
+                }
+            }
 
-		void removeClient(SOCKET client_socket)
-		{
-			std::lock_guard<std::mutex> lock(clients_mutex);
+            std::string welcome_msg = "用户 " + username + " 加入了聊天室";
+            std::cout << welcome_msg << std::endl;
+            broadcastMessage(welcome_msg, client_socket);
 
-			auto it = std::remove_if(clients.begin(), clients.end(),
-			                         [client_socket](const ClientInfo & client)
-			{
-				return client.socket == client_socket;
-			});
+            // 主消息循环
+            while (running)
+            {
+                bytes_received =
+                    recv(client_socket, buffer, sizeof(buffer) - 1, 0);
 
-			if (it != clients.end())
-			{
-				if (it->thread.joinable())
-				{
-					it->thread.detach();
-				}
-				if (it->socket != INVALID_SOCKET)
-				{
-					closesocket(it->socket);
-				}
-				clients.erase(it, clients.end());
-			}
-		}
+                if (bytes_received == 0)
+                {
+                    std::cout << "客户端 " << username << " 断开连接"
+                              << std::endl;
+                    break;
+                }
+                else if (bytes_received == SOCKET_ERROR)
+                {
+                    int error = WSAGetLastError();
+                    if (error != WSAEWOULDBLOCK)
+                    {
+                        std::cerr << "接收数据错误: " << error << std::endl;
+                        break;
+                    }
+                    continue;
+                }
+
+                buffer[bytes_received] = '\0';
+                std::string message(buffer);
+
+                // 处理退出命令
+                if (message == "/quit" || message == "/exit")
+                {
+                    std::cout << "用户 " << username << " 请求退出"
+                              << std::endl;
+                    break;
+                }
+
+                std::string full_message = username + ": " + message;
+                std::cout << full_message << std::endl;
+                broadcastMessage(full_message, client_socket);
+            }
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "处理客户端错误: " << e.what() << std::endl;
+        }
+
+        // 清理客户端
+        removeClient(client_socket);
+        if (!username.empty())
+        {
+            std::string leave_msg = "用户 " + username + " 离开了聊天室";
+            std::cout << leave_msg << std::endl;
+            broadcastMessage(leave_msg);
+        }
+    }
+
+    void broadcastMessage(const std::string &message,
+                          SOCKET exclude_socket = INVALID_SOCKET)
+    {
+        std::lock_guard<std::mutex> lock(clients_mutex);
+
+        for (const auto &client : clients)
+        {
+            if (client.socket != exclude_socket &&
+                client.socket != INVALID_SOCKET)
+            {
+                send(client.socket, message.c_str(), message.length(), 0);
+            }
+        }
+    }
+
+    void removeClient(SOCKET client_socket)
+    {
+        std::lock_guard<std::mutex> lock(clients_mutex);
+
+        auto it = std::remove_if(clients.begin(), clients.end(),
+                                 [client_socket](const ClientInfo &client)
+                                 { return client.socket == client_socket; });
+
+        if (it != clients.end())
+        {
+            if (it->thread.joinable())
+            {
+                it->thread.detach();
+            }
+            if (it->socket != INVALID_SOCKET)
+            {
+                closesocket(it->socket);
+            }
+            clients.erase(it, clients.end());
+        }
+    }
 };
 
 int main()
 {
-	std::cout << "=== C++ 多线程聊天室服务器 ===" << std::endl;
+    std::cout << "=== C++ 多线程聊天室服务器 ===" << std::endl;
 
-	ChatServer server;
+    ChatServer server;
 
-	// 启动服务器，监听8080端口
-	if (!server.start(8080))
-	{
-		std::cerr << "服务器启动失败!" << std::endl;
-		return 1;
-	}
+    // 启动服务器，监听8080端口
+    if (!server.start(8080))
+    {
+        std::cerr << "服务器启动失败!" << std::endl;
+        return 1;
+    }
 
-	std::cout << "服务器运行中..." << std::endl;
-	std::cout << "输入 'quit' 或按 Ctrl+C 退出" << std::endl;
+    std::cout << "服务器运行中..." << std::endl;
+    std::cout << "输入 'quit' 或按 Ctrl+C 退出" << std::endl;
 
-	// 等待用户输入退出命令
-	std::string command;
-	while (std::getline(std::cin, command))
-	{
-		if (command == "quit" || command == "exit")
-		{
-			break;
-		}
-	}
+    // 等待用户输入退出命令
+    std::string command;
+    while (std::getline(std::cin, command))
+    {
+        if (command == "quit" || command == "exit")
+        {
+            break;
+        }
+    }
 
-	server.stop();
-	return 0;
+    server.stop();
+    return 0;
 }
