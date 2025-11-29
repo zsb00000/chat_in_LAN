@@ -209,7 +209,8 @@ class ChatServer
 
         while (running)
         {
-            sockaddr_in client_addr{};
+            // 修改这里：使用 sockaddr_in6 代替 sockaddr_in
+            sockaddr_in6 client_addr{};
             int client_addr_len = sizeof(client_addr);
 
             SOCKET client_socket = accept(
@@ -221,16 +222,16 @@ class ChatServer
                 {
                     std::cerr << "Accept failed: " << WSAGetLastError()
                               << std::endl;
+                    system("pause");
                 }
                 continue;
             }
 
-            // 获取客户端IP地址
-            char client_ip[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &client_addr.sin_addr, client_ip,
-                      INET_ADDRSTRLEN);
+            char client_ip[INET6_ADDRSTRLEN];
+            inet_ntop(AF_INET6, &client_addr.sin6_addr, client_ip,
+                      INET6_ADDRSTRLEN);
             std::cout << "新的客户端连接: " << client_ip << ":"
-                      << ntohs(client_addr.sin_port) << std::endl;
+                      << ntohs(client_addr.sin6_port) << std::endl;
 
             // 创建客户端处理线程
             std::thread client_thread(&ChatServer::handleClient, this,

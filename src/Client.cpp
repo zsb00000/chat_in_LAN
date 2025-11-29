@@ -95,40 +95,59 @@ class ChatClient
             return false;
         }
 
-        // 创建客户端socket - 修改为支持IPv6
-        client_socket =
-            socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP); // AF_INET6 代替 AF_INET
-        if (client_socket == INVALID_SOCKET)
+        // 使用 getaddrinfo 解析地址
+        struct addrinfo hints, *result, *rp;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_UNSPEC; // 同时支持 IPv4 和 IPv6
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = IPPROTO_TCP;
+
+        std::string port_str = std::to_string(port);
+        int status =
+            getaddrinfo(server_ip.c_str(), port_str.c_str(), &hints, &result);
+        if (status != 0)
         {
-            std::cerr << "Socket creation failed: " << WSAGetLastError()
+            std::cerr << "getaddrinfo failed: " << gai_strerror(status)
                       << std::endl;
             WSACleanup();
             return false;
         }
 
-        // 设置服务器地址 - 修改为IPv6地址结构
-        sockaddr_in6 server_addr{}; // sockaddr_in6 代替 sockaddr_in
-        server_addr.sin6_family = AF_INET6;
-        server_addr.sin6_port = htons(port);
-
-        // 使用适合IPv6的地址转换函数
-        if (inet_pton(AF_INET6, server_ip.c_str(), &server_addr.sin6_addr) <= 0)
+        // 尝试所有返回的地址
+        for (rp = result; rp != nullptr; rp = rp->ai_next)
         {
-            std::cerr << "无效的IPv6地址: " << server_ip << std::endl;
+            client_socket =
+                socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+            if (client_socket == INVALID_SOCKET)
+            {
+                continue;
+            }
+
+            // 设置 SO_REUSEADDR
+            int opt = 1;
+            setsockopt(client_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
+                       sizeof(opt));
+
+            std::cout << "正在连接到服务器 " << server_ip << ":" << port
+                      << "..." << std::endl;
+
+            if (::connect(client_socket, rp->ai_addr, (int)rp->ai_addrlen) !=
+                SOCKET_ERROR)
+            {
+                // 连接成功
+                break;
+            }
+
+            // 连接失败，关闭socket继续尝试下一个地址
             closesocket(client_socket);
-            WSACleanup();
-            return false;
+            client_socket = INVALID_SOCKET;
         }
 
-        // 连接服务器
-        std::cout << "正在连接到服务器 " << server_ip << ":" << port << "..."
-                  << std::endl;
+        freeaddrinfo(result);
 
-        if (::connect(client_socket, (sockaddr *)&server_addr,
-                      sizeof(server_addr)) == SOCKET_ERROR)
+        if (client_socket == INVALID_SOCKET)
         {
-            std::cerr << "连接服务器失败: " << WSAGetLastError() << std::endl;
-            closesocket(client_socket);
+            std::cerr << "连接服务器失败，所有地址尝试均失败" << std::endl;
             WSACleanup();
             return false;
         }
