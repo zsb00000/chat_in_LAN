@@ -25,38 +25,47 @@
 ## 编译说明
 ### 客户端编译
 ```bash
-g++ -std=c++11 src/Client.cpp -lws2_32 -o ChatClient.exe
+g++ -std=c++11 src/Client.cpp -lws2_32 -o Client.exe
 ```
 ### 服务器编译
 ```bash
-g++ -std=c++11 src/Server.cpp -lws2_32 -o ChatServer.exe
+g++ -std=c++11 src/Server.cpp -lws2_32 -o Server.exe
+```  
+### 或直接使用Makefile  
+```bash
+make
 ```
 **注意**: 本项目使用Windows Socket API，仅支持Windows平台编译运行。
 ## 使用方法
 ### 1. 启动服务器
 ```bash
-./ChatServer.exe
+./Server.exe
 ```
 服务器默认监听8080端口。
 ### 2. 启动客户端
 ```bash
-./ChatClient.exe
+./Client.exe
 ```
 按照提示输入：
 - 服务器IP地址（默认：127.0.0.1）
 - 服务器端口（默认：8080）
 - 用户名
+- 目前已同时支持IPv4和IPv6
 ### 3. 开始聊天
 - 直接输入消息并回车发送
 - 使用 `/help` 查看可用命令
 - 使用 `/quit` 或 `/exit` 退出
 ## 项目结构
 ```bash
-chat-system/
+CHAT_IN_LAN_PROJECT/
+├── .vscode/
+│   └── settings.json          # VSCode 编辑器配置
 ├── src/
-│   ├── Client.cpp          # 客户端实现
-│   └── Server.cpp          # 服务器实现
-└── README.md              # 项目说明
+│   ├── Client.cpp             # 客户端实现
+│   └── Server.cpp             # 服务器实现
+├── .gitignore                 # Git 忽略文件配置
+├── makefile                   # 构建脚本
+└── README.md                  # 项目说明文档
 ```
 ## 核心类说明
 ### ChatClient (客户端)
